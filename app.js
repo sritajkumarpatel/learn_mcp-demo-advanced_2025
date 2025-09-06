@@ -1,10 +1,16 @@
-/* MCP Demo Advanced - app.js
-   Features:
-   - Memory (localStorage)
-   - Tools: time + calculator (calc)
-   - Safety filter for unsafe keywords
-   - Simple logging and observability
+/* MCP Demo Advanced - app.js (updated)
+   Adds:
+   - tool_joke() : returns random joke (local)
+   - tool_weather(city) : fetches OpenWeatherMap or returns simulated fallback
+   - assistantRespond is now async to support fetch-based tools
+   - send handler awaits async assistantRespond
+   Notes:
+   - Paste your OpenWeatherMap API key into WEATHER_API_KEY below for live weather.
 */
+
+// ---------- CONFIG ----------
+const WEATHER_API_KEY = ""; // <-- OPTIONAL: paste your OpenWeatherMap API key here (don't commit to public repos)
+// ----------------------------
 
 // UI refs
 const chatEl = document.getElementById("chat");
@@ -80,19 +86,81 @@ function clearMemory() {
   log("Memory cleared");
 }
 
-// Tools
-function tool_time() {
-  log("Tool called: time");
-  return new Date().toLocaleString();
+// ------------------ Tools ------------------
+
+// Joke tool: local list of jokes (works offline)
+function tool_joke() {
+  log("Tool called: joke");
+  const jokes = [
+    "Why did the programmer quit his job? Because he didn't get arrays.",
+    "Why do programmers prefer dark mode? Because light attracts bugs!",
+    "How many programmers does it take to change a light bulb? None — that's a hardware problem.",
+    "A SQL query walks into a bar, walks up to two tables and asks: 'Can I join you?'",
+    "Why was the JavaScript developer sad? Because he didn't Node how to Express himself.",
+  ];
+  const j = jokes[Math.floor(Math.random() * jokes.length)];
+  return j;
 }
+
+// Weather tool: tries live OpenWeatherMap if API key present, otherwise returns simulated response
+async function tool_weather(city) {
+  log("Tool called: weather", { detail: city });
+  city = (city || "").trim();
+  if (!city) return 'Please specify a city. Example: "weather in Bengaluru"';
+
+  // If API key is provided, call OpenWeatherMap
+  if (WEATHER_API_KEY && WEATHER_API_KEY.length > 0) {
+    try {
+      const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(
+        city
+      )}&units=metric&appid=${encodeURIComponent(WEATHER_API_KEY)}`;
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        log("Weather API error", {
+          detail: `${resp.status} ${resp.statusText}`,
+        });
+        // fall back to simulated if API fails
+        return `Could not fetch live weather for "${city}" (status ${resp.status}). Here is a simulated response: 27°C, partly cloudy.`;
+      }
+      const data = await resp.json();
+      // Build a short human-friendly reply
+      const name = data.name || city;
+      const c =
+        data.main && typeof data.main.temp !== "undefined"
+          ? `${data.main.temp}°C`
+          : "N/A";
+      const desc =
+        data.weather && data.weather[0] && data.weather[0].description
+          ? data.weather[0].description
+          : "unknown";
+      const humidity =
+        data.main && data.main.humidity
+          ? `${data.main.humidity}% humidity`
+          : "";
+      return `${name}: ${c}, ${desc}${humidity ? " — " + humidity : ""}.`;
+    } catch (e) {
+      log("Weather fetch error", { detail: e.message });
+      // fallback simulated
+      return `Could not fetch live weather for "${city}". Simulated: 26°C, sunny.`;
+    }
+  }
+
+  // No API key: simulated reply (useful for offline testing)
+  const samples = [
+    `${city}: 27°C, partly cloudy — 60% humidity.`,
+    `${city}: 22°C, light rain — 78% humidity.`,
+    `${city}: 31°C, sunny — 40% humidity.`,
+    `${city}: 15°C, chilly and clear — 55% humidity.`,
+  ];
+  return samples[Math.floor(Math.random() * samples.length)];
+}
+
+// Calculator tool (unchanged)
 function tool_calc(expr) {
   log("Tool called: calc", { detail: expr });
-  // VERY simple safe calculator parser: allow digits, spaces, + - * / ( ) . %
-  // Block any letters or other characters
   if (/[^0-9+\-*/(). %]/.test(expr)) {
     throw new Error("Invalid characters in expression");
   }
-  // Simple eval in controlled environment
   try {
     // eslint-disable-next-line no-eval
     const result = eval(expr);
@@ -103,7 +171,13 @@ function tool_calc(expr) {
   }
 }
 
-// Safety (very simple demo)
+// Time tool (unchanged)
+function tool_time() {
+  log("Tool called: time");
+  return new Date().toLocaleString();
+}
+
+// ------------------ Safety ------------------
 const BLOCKED_KEYWORDS = [
   "delete all files",
   "rm -rf",
@@ -128,8 +202,9 @@ function safetyCheck(input) {
   return { ok: true };
 }
 
-// Orchestrator / assistant
-function assistantRespond(input) {
+// ------------------ Orchestrator (async) ------------------
+// assistantRespond is now async so we can await tools that call network
+async function assistantRespond(input) {
   const memory = loadMemory();
   input = (input || "").trim();
   log("User message received", { detail: input });
@@ -167,7 +242,7 @@ function assistantRespond(input) {
     );
   }
 
-  // 5. Tools: calculator -- triggers when message starts with "calc " or "calculate "
+  // 5. Tools: calculator
   const calcMatch =
     input.match(/^(?:calc|calculate)\s+(.+)$/i) ||
     input.match(/^([0-9\.\s()+\-*/%]+)\s*$/);
@@ -182,7 +257,28 @@ function assistantRespond(input) {
     }
   }
 
-  // Default: generate a reply based on tone
+  // 6. Tools: joke
+  if (/\b(joke|tell me a joke|make me laugh)\b/i.test(input)) {
+    const j = tool_joke();
+    return j;
+  }
+
+  // 7. Tools: weather - "weather in <city>" or "what's the weather in <city>"
+  const weatherMatch =
+    input.match(/weather(?: in)?\s+([a-zA-Z\s\-']+)$/i) ||
+    input.match(/what(?:'s| is) the weather in\s+([a-zA-Z\s\-']+)$/i);
+  if (weatherMatch) {
+    const city = weatherMatch[1].trim();
+    try {
+      const resp = await tool_weather(city);
+      return resp;
+    } catch (e) {
+      log("Weather tool error", { detail: e.message });
+      return `Sorry, could not retrieve weather for "${city}".`;
+    }
+  }
+
+  // 8. Default: generate a reply based on tone
   const tone = memory.tone || "friendly";
   let resp = "";
   if (tone === "friendly") {
@@ -202,17 +298,20 @@ function assistantRespond(input) {
   return resp;
 }
 
-// UI events
-sendBtn.onclick = () => {
+// ------------------ UI events (async-aware) ------------------
+sendBtn.onclick = async () => {
   const txt = msgEl.value.trim();
   if (!txt) return;
   renderMessage(txt, "user");
   msgEl.value = "";
-  // simulate processing
-  setTimeout(() => {
-    const out = assistantRespond(txt);
+  // process asynchronously
+  try {
+    const out = await assistantRespond(txt);
     renderMessage(out, "bot");
-  }, 350);
+  } catch (e) {
+    log("Orchestrator error", { detail: e.message });
+    renderMessage("Internal error while processing your request.", "bot");
+  }
 };
 saveBtn.onclick = saveMemory;
 clearBtn.onclick = clearMemory;
