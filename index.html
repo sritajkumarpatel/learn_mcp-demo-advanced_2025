@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MCP Demo — Advanced</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>MCP Demo — Tools + Memory + Safety</h1>
+
+      <div class="memory">
+        <label>Your name: <input id="name" placeholder="e.g. Sritaj" /></label>
+        <label
+          >Tone:
+          <select id="tone">
+            <option value="friendly">Friendly</option>
+            <option value="concise">Concise</option>
+            <option value="formal">Formal</option>
+          </select>
+        </label>
+        <button id="saveMemory">Save memory</button>
+        <button id="clearMemory">Clear memory</button>
+      </div>
+
+      <div id="chat" class="chat"></div>
+
+      <div class="composer">
+        <input id="message" placeholder='Try: "what's the time?", "calc 56*39",
+        "remember I'm vegetarian"' />
+        <button id="send">Send</button>
+      </div>
+
+      <div class="controls">
+        <button id="showLogs">Show Console Logs</button>
+        <button id="clearLogs">Clear Console Logs</button>
+      </div>
+
+      <div class="tips">
+        <p><strong>Try examples:</strong></p>
+        <ul>
+          <li><code>what's the time?</code></li>
+          <li><code>calc 56 * 39</code> or <code>calc 10/3</code></li>
+          <li><code>remember my favorite color is blue</code></li>
+          <li><code>show memory</code></li>
+          <li><code>delete all files</code> (should be blocked)</li>
+        </ul>
+      </div>
+
+      <div id="logPanel" class="logPanel" hidden></div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
